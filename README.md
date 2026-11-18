@@ -383,6 +383,38 @@ All four metrics pass threshold. `answer_relevancy` originally scored 0.558 — 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
+## Web UI
+
+A React + TypeScript frontend lives in [`frontend/`](frontend/): streaming chat (RAG / Agent / Corrective RAG modes),
+source citations, and a Digimon explorer.
+
+**Develop**
+
+```bash
+# Start the backend on :8000 (configure .env and run make services + make ingest first)
+make run
+cd frontend
+npm ci
+npm run dev
+```
+
+The UI runs on `http://localhost:5173` and proxies `/api` requests to the backend on `:8000`.
+
+**Deploy with Docker**
+
+```bash
+cp .env.example .env
+# Add ANTHROPIC_API_KEY and VOYAGE_API_KEY to .env
+cd docker
+docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.app.yml up -d --build
+```
+
+Open `http://localhost:8080`. To populate the archive, run
+`docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.app.yml run --rm api python -m app.ingestion.ingest`.
+Ingestion can take several minutes and needs a valid Voyage API key.
+
+See [`FRONTEND_BUILD_GUIDE.md`](FRONTEND_BUILD_GUIDE.md) for architecture, accessibility, and deployment conventions.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

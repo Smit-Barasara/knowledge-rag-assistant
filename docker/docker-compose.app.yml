@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      QDRANT_HOST: qdrant
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres
+      LANGFUSE_HOST: http://langfuse:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_started
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
