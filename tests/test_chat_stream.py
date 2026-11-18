@@ -86,3 +86,22 @@ def test_chat_stream_yields_sse_chunks(stream_client):
     assert b"data:" in body
     assert b'"token"' in body
     assert b'"done"' in body
+
+
+def test_chat_stream_emits_sources_event_before_tokens(stream_client):
+    import json
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+        body = b"".join(response.iter_bytes()).decode()
+    events = [json.loads(b[len("data: "):]) for b in body.split("\n\n") if b.startswith("data: ")]
+    assert "sources" in events[0]
+    assert events[0]["sources"][0]["name"] == "Agumon"
+    assert any("token" in e for e in events)
+    done = events[-1]
+    assert done["done"] is True and done["conversation_id"]
+    assert done["usage"]["total_tokens"] == 40
+
+
+def test_chat_stream_sets_proxy_friendly_headers(stream_client):
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.headers["x-accel-buffering"] == "no"

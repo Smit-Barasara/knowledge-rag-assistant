@@ -64,6 +64,18 @@ async def _contextualize_query(query: str, history: list, llm_client) -> str:
         return query
 
 
+def _sources_from_chunks(context_chunks: list) -> list:
+    """Shape retrieved chunks into the public `context_sources` format (same as /chat)."""
+    return [
+        {
+            "digimon_id": c.get("payload", {}).get("digimon_id"),
+            "name": c.get("payload", {}).get("name"),
+            "score": c.get("score"),
+        }
+        for c in context_chunks
+    ]
+
+
 async def _judge_response(trace_id: str, query: str, context_texts: list, answer: str) -> None:
     """Background task: LLM-as-judge scores sent to Langfuse after the response is returned."""
     judge = LLMJudge()
@@ -282,6 +294,8 @@ async def chat_stream(request: ChatRequest):
         start_time = time.time()
         full_text = []
         try:
+            # Additive event: lets the UI render citations before/while tokens stream.
+            yield f"data: {json.dumps({'sources': _sources_from_chunks(context_chunks)})}\n\n"
             async for chunk in client.stream(user_message, history=history, system=PromptBuilder.SYSTEM_PROMPT):
                 if chunk["type"] == "token":
                     full_text.append(chunk["text"])
@@ -303,7 +317,7 @@ async def chat_stream(request: ChatRequest):
                         latency_ms=latency_ms,
                     )
                     langfuse.flush()
-                    yield f"data: {json.dumps({'done': True, 'conversation_id': conversation_id, 'latency_ms': latency_ms})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'conversation_id': conversation_id, 'latency_ms': latency_ms, 'usage': chunk['usage']})}\n\n"
         except Exception as e:
             logger.error(f"Error in streaming chat: {e}")
             yield f"data: {json.dumps({'error': 'Internal server error'})}\n\n"
@@ -312,4 +326,8 @@ async def chat_stream(request: ChatRequest):
             await redis.close()
             langfuse.flush()
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

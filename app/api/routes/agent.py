@@ -99,6 +99,7 @@ class GraphResponse(BaseModel):
     iterations: int
     documents_used: int
     latency_ms: int
+    rewritten_query: Optional[str] = None
 
 
 @router.post("/graph", response_model=GraphResponse)
@@ -139,6 +140,7 @@ async def run_graph(request: GraphRequest):
             iterations=final_state["iterations"],
             documents_used=len(final_state["documents"]),
             latency_ms=latency_ms,
+            rewritten_query=final_state.get("rewritten_query"),
         )
 
     except HTTPException:

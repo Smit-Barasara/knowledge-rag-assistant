@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     log_level: str = "INFO"
+    cors_origins: str = "*"  # comma-separated; "*" keeps the previous behaviour
 
 
 @lru_cache
