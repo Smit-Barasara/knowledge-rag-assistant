@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class Retriever:
-    """Retrieve relevant Digimon information from Qdrant."""
+    """Retrieve relevant Indian rail guidance from Qdrant."""
     
     def __init__(self):
         self.qdrant = QdrantManager()

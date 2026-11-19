@@ -1,54 +1,111 @@
-import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 @pytest.fixture
-def mock_anthropic_client():
-    """Patch AsyncAnthropic at the import location in llm_client."""
-    with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_cls:
+def mock_groq_client():
+    with patch("app.rag.llm_client.AsyncOpenAI") as mock_cls:
         mock_instance = MagicMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
 
 
-async def test_chat_returns_content(mock_anthropic_client):
-    from app.rag.llm_client import LLMClient
+async def test_chat_returns_content_and_usage(mock_groq_client):
+    from app.rag.llm_client import GROQ_BASE_URL, LLMClient
 
-    fake_message = MagicMock()
-    fake_message.content = [MagicMock(text="Agumon is a Rookie Digimon.")]
-    fake_message.model = "claude-haiku-4-5-20251001"
-    fake_message.usage = MagicMock(input_tokens=30, output_tokens=10)
-    mock_anthropic_client.messages.create = AsyncMock(return_value=fake_message)
-
-    client = LLMClient()
-    result = await client.chat("What is Agumon?")
-
-    assert result["content"] == "Agumon is a Rookie Digimon."
-    assert "usage" in result
-    assert result["usage"]["total_tokens"] == 40
-
-
-async def test_chat_returns_token_usage(mock_anthropic_client):
-    from app.rag.llm_client import LLMClient
-
-    fake_message = MagicMock()
-    fake_message.content = [MagicMock(text="OK")]
-    fake_message.model = "claude-haiku-4-5-20251001"
-    fake_message.usage = MagicMock(input_tokens=10, output_tokens=5)
-    mock_anthropic_client.messages.create = AsyncMock(return_value=fake_message)
+    mock_groq_client.chat.completions.create = AsyncMock(return_value=SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Check the official rail guidance."))],
+        model="openai/gpt-oss-120b",
+        usage=SimpleNamespace(prompt_tokens=30, completion_tokens=10),
+    ))
 
     client = LLMClient()
-    result = await client.chat("test")
+    result = await client.chat(
+        "How do I cancel a ticket?",
+        history=[{"role": "assistant", "content": "What ticket?"}],
+        system="Answer from official sources.",
+    )
 
-    assert result["usage"]["prompt_tokens"] == 10
-    assert result["usage"]["completion_tokens"] == 5
+    assert result == {
+        "content": "Check the official rail guidance.",
+        "model": "openai/gpt-oss-120b",
+        "usage": {"prompt_tokens": 30, "completion_tokens": 10, "total_tokens": 40},
+    }
+    mock_groq_client.chat.completions.create.assert_awaited_once_with(
+        model="openai/gpt-oss-120b",
+        max_completion_tokens=1024,
+        messages=[
+            {"role": "system", "content": "Answer from official sources."},
+            {"role": "assistant", "content": "What ticket?"},
+            {"role": "user", "content": "How do I cancel a ticket?"},
+        ],
+    )
+    assert GROQ_BASE_URL == "https://api.groq.com/openai/v1"
 
 
-async def test_chat_handles_api_error(mock_anthropic_client):
+async def test_chat_raises_api_error(mock_groq_client):
     from app.rag.llm_client import LLMClient
 
-    mock_anthropic_client.messages.create = AsyncMock(side_effect=Exception("API error"))
+    mock_groq_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("API error"))
 
-    client = LLMClient()
-    with pytest.raises(Exception, match="API error"):
-        await client.chat("any question")
+    with pytest.raises(RuntimeError, match="API error"):
+        await LLMClient().chat("Any question?")
+
+
+async def test_stream_yields_tokens_and_final_usage(mock_groq_client):
+    from app.rag.llm_client import LLMClient
+
+    class FakeStream:
+        def __aiter__(self):
+            async def chunks():
+                yield SimpleNamespace(
+                    choices=[SimpleNamespace(delta=SimpleNamespace(content="Check "))],
+                    usage=None,
+                )
+                yield SimpleNamespace(
+                    choices=[SimpleNamespace(delta=SimpleNamespace(content="IRCTC."))],
+                    usage=None,
+                )
+                yield SimpleNamespace(
+                    choices=[],
+                    usage=SimpleNamespace(prompt_tokens=12, completion_tokens=4),
+                )
+
+            return chunks()
+
+    mock_groq_client.chat.completions.create = AsyncMock(return_value=FakeStream())
+
+    chunks = [
+        chunk async for chunk in LLMClient().stream(
+            "How do I check?",
+            history=[{"role": "user", "content": "I booked a ticket."}],
+            system="Be concise.",
+        )
+    ]
+
+    assert chunks == [
+        {"type": "token", "text": "Check "},
+        {"type": "token", "text": "IRCTC."},
+        {"type": "done", "usage": {"prompt_tokens": 12, "completion_tokens": 4, "total_tokens": 16}},
+    ]
+    mock_groq_client.chat.completions.create.assert_awaited_once_with(
+        model="openai/gpt-oss-120b",
+        max_completion_tokens=1024,
+        messages=[
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "I booked a ticket."},
+            {"role": "user", "content": "How do I check?"},
+        ],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+
+
+async def test_close_closes_groq_client(mock_groq_client):
+    from app.rag.llm_client import LLMClient
+
+    mock_groq_client.close = AsyncMock()
+    await LLMClient().close()
+    mock_groq_client.close.assert_awaited_once()

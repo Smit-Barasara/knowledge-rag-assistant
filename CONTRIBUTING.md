@@ -1,4 +1,4 @@
-# Contributing to Digimon RAG Assistant
+# Contributing to Railwise
 
 Thank you for your interest in contributing to this project!
 
@@ -8,8 +8,8 @@ Thank you for your interest in contributing to this project!
 2. Create a virtual environment: `python3 -m venv venv`
 3. Activate the virtual environment: `source venv/bin/activate`
 4. Install dependencies: `pip install -r requirements.txt`
-5. Copy `.env.example` to `.env` and add your Anthropic and Voyage AI API keys
-6. Start Docker services: `cd docker && docker compose up -d` (or `make services`)
+5. Copy `.env.example` to `.env` and add your Groq and Voyage AI API keys
+6. Start Docker services from `docker/`: `docker compose --env-file ..\.env -f docker-compose.yml -f docker-compose.app.yml up -d`
 7. Run data ingestion: `python -m app.ingestion.ingest` (or `make ingest`)
 8. Start the server: `python -m app.api.main` (or `make run`)
 
@@ -22,7 +22,7 @@ Thank you for your interest in contributing to this project!
 
 ## Testing
 
-Run tests with: `pytest` (or `make test`). Integration tests (`tests/test_ingestion.py`, marked `@pytest.mark.integration`) need live services and are excluded by default — run them with `pytest -m integration`.
+Run the backend tests with `python -m pytest -q`. The frontend checks are documented in the project [README](README.md#tests).
 
 ## Submitting Changes
 
@@ -38,7 +38,7 @@ Run tests with: `pytest` (or `make test`). Integration tests (`tests/test_ingest
 app/
 ├── api/           # FastAPI routes
 ├── core/          # Configuration and logging
-├── ingestion/     # Data ingestion from DAPI
+├── ingestion/     # Curated rail guidance ingestion
 ├── rag/           # RAG pipeline (retriever, prompt builder, LLM client)
 ├── guardrails/    # Input topic classifier (fail-open)
 ├── mcp/           # MCP server

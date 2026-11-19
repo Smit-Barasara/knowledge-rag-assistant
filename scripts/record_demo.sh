@@ -20,38 +20,38 @@ API="http://localhost:8000/api/v1/chat"
 echo "Recording demo — press Ctrl+D or Ctrl+C when done."
 echo ""
 
-asciinema rec "$CAST_FILE" --cols 100 --rows 30 --title "Digimon RAG Assistant demo" -- bash -c '
+asciinema rec "$CAST_FILE" --cols 100 --rows 30 --title "Railwise guidance assistant demo" -- bash -c '
 set -euo pipefail
 API="http://localhost:8000/api/v1/chat"
 
-echo "=== Digimon RAG Assistant — multi-turn demo ==="
+echo "=== Railwise — source-grounded rail guidance demo ==="
 echo ""
 sleep 1
 
-echo "# Turn 1: ask about Agumon"
+echo "# Turn 1: ask about e-ticket cancellation"
 sleep 0.5
 RESP=$(curl -s -X POST "$API" \
   -H "Content-Type: application/json" \
-  -d '"'"'{"query": "Tell me about Agumon"}'"'"')
+  -d '"'"'{"query": "How does the IRCTC guide describe e-ticket cancellation after chart preparation?"}'"'"')
 echo "$RESP" | python3 -m json.tool
 CONV_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[\"conversation_id\"])")
 echo ""
 sleep 2
 
-echo "# Turn 2: follow-up using a pronoun — guardrail resolves it"
+echo "# Turn 2: ask whether a TDR guarantees a refund"
 sleep 0.5
 curl -s -X POST "$API" \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"What does it digivolve into?\", \"conversation_id\": \"$CONV_ID\"}" \
+  -d "{\"query\": \"Does filing a TDR guarantee a refund?\", \"conversation_id\": \"$CONV_ID\"}" \
   | python3 -m json.tool
 echo ""
 sleep 2
 
-echo "# Turn 3: another pronoun follow-up"
+echo "# Turn 3: ask where to verify current rules"
 sleep 0.5
 curl -s -X POST "$API" \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"What are its skills?\", \"conversation_id\": \"$CONV_ID\"}" \
+  -d "{\"query\": \"Where should I verify the current details?\", \"conversation_id\": \"$CONV_ID\"}" \
   | python3 -m json.tool
 echo ""
 sleep 2

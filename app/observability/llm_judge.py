@@ -52,7 +52,7 @@ class LLMJudge:
             )
             raw = response["content"].strip()
             logger.debug(f"[judge] raw LLM output: {raw}")
-            # Extract JSON even when Claude wraps it in explanation text
+            # Extract JSON even when the model wraps it in explanation text
             match = re.search(r"\{[^{}]+\}", raw)
             if not match:
                 raise ValueError(f"No JSON object found in judge output: {raw!r}")

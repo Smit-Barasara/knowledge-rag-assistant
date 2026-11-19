@@ -11,8 +11,8 @@ def mock_settings():
     from app.core.config import Settings
 
     fake = Settings(
-        anthropic_api_key="test-anthropic-key",
-        anthropic_model="claude-haiku-4-5-20251001",
+        groq_api_key="test-groq-key",
+        groq_model="openai/gpt-oss-120b",
         voyage_api_key="test-voyage-key",
         langfuse_public_key="",
         langfuse_secret_key="",
@@ -20,6 +20,12 @@ def mock_settings():
     )
     with patch("app.core.config.get_settings", return_value=fake):
         yield fake
+
+
+@pytest.fixture(scope="module")
+def mock_database_startup():
+    with patch("app.api.main.PostgresManager") as manager_cls:
+        yield manager_cls
 
 
 @pytest.fixture
@@ -30,26 +36,15 @@ def sample_chunks():
             "id": 10,
             "score": 0.92,
             "payload": {
-                "digimon_id": 1,
-                "name": "Agumon",
+                "document_id": 1,
+                "name": "Cancelling an IRCTC e-ticket",
+                "title": "Cancelling an IRCTC e-ticket",
+                "category": "Tickets",
+                "topic": "Cancellation and refunds",
+                "source_url": "https://contents.irctc.co.in/en/eticketCancel.html",
+                "last_verified": "2026-11-18",
                 "chunk_index": 0,
-                "chunk_text": "Agumon is a Rookie level Digimon with Reptile type and Vaccine attribute.",
-                "level": "Rookie",
-                "type": "Reptile",
-                "attribute": "Vaccine",
-            },
-        },
-        {
-            "id": 11,
-            "score": 0.85,
-            "payload": {
-                "digimon_id": 1,
-                "name": "Agumon",
-                "chunk_index": 1,
-                "chunk_text": "Agumon: A Reptile Digimon that is well balanced in both offense and defense.",
-                "level": "Rookie",
-                "type": "Reptile",
-                "attribute": "Vaccine",
+                "chunk_text": "An e-ticket can be cancelled online before reservation-chart preparation.",
             },
         },
     ]
@@ -59,7 +54,7 @@ def sample_chunks():
 def mock_llm_response():
     """Minimal LLMClient.chat() return value."""
     return {
-        "content": "Agumon is a Rookie level Digimon.",
+        "content": "Check the current IRCTC cancellation guidance before acting.",
         "model": "claude-haiku-4-5-20251001",
         "usage": {
             "prompt_tokens": 50,

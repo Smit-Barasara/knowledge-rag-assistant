@@ -26,12 +26,12 @@ class AgentResponse(BaseModel):
     latency_ms: int
 
 
-async def _assert_digimon_query(query: str) -> None:
-    """Raise HTTP 400 if the query is not Digimon-related."""
+async def _assert_rail_query(query: str) -> None:
+    """Raise HTTP 400 if the query is outside Indian rail travel guidance."""
     llm_client = LLMClient()
     try:
         guard = InputGuard(llm_client)
-        if not await guard.is_digimon_related(query):
+        if not await guard.is_rail_related(query):
             raise HTTPException(status_code=400, detail=OFF_TOPIC_MESSAGE)
     finally:
         await llm_client.close()
@@ -44,7 +44,7 @@ async def run_agent(request: AgentRequest):
     langfuse = LangfuseManager()
 
     try:
-        await _assert_digimon_query(request.query)
+        await _assert_rail_query(request.query)
         result = await agent.run(request.query)
         latency_ms = int((time.time() - start_time) * 1000)
 
@@ -99,6 +99,7 @@ class GraphResponse(BaseModel):
     iterations: int
     documents_used: int
     latency_ms: int
+    rewritten_query: Optional[str] = None
 
 
 @router.post("/graph", response_model=GraphResponse)
@@ -108,7 +109,7 @@ async def run_graph(request: GraphRequest):
     langfuse = LangfuseManager()
 
     try:
-        await _assert_digimon_query(request.query)
+        await _assert_rail_query(request.query)
         initial_state = {
             "query": request.query,
             "rewritten_query": None,
@@ -139,6 +140,7 @@ async def run_graph(request: GraphRequest):
             iterations=final_state["iterations"],
             documents_used=len(final_state["documents"]),
             latency_ms=latency_ms,
+            rewritten_query=final_state.get("rewritten_query"),
         )
 
     except HTTPException:

@@ -58,3 +58,12 @@ scripts/.eval_cache.json
 
 # Demo recording source (GIF is committed; .cast is the raw asciinema file)
 docs/demo.cast
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/.env*
+!frontend/.env.example

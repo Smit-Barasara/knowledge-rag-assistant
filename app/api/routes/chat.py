@@ -25,8 +25,8 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     conversation_id: Optional[str] = None
-    level_filter: Optional[str] = None
-    type_filter: Optional[str] = None
+    category_filter: Optional[str] = None
+    topic_filter: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -40,7 +40,7 @@ class ChatResponse(BaseModel):
 async def _contextualize_query(query: str, history: list, llm_client) -> str:
     """Rewrite a follow-up question to be standalone so the retriever can find relevant chunks.
 
-    E.g. "What are its digivolutions?" + Agumon history → "What are Agumon's digivolutions?"
+    E.g. a follow-up such as "What about after chart preparation?" is made self-contained.
     Falls back to the original query if the LLM call fails.
     """
     if not history:
@@ -55,13 +55,28 @@ async def _contextualize_query(query: str, history: list, llm_client) -> str:
             "Rewrite the follow-up as a self-contained question with no pronouns (it, its, they, them). "
             "If it is already standalone, return it unchanged. Return only the question, nothing else."
         )
-        rewritten = (await llm_client.chat(prompt, max_tokens=80))["content"].strip()
+        rewritten = (await llm_client.chat(prompt, max_tokens=256))["content"].strip()
+        if not rewritten:
+            logger.warning("[history] contextualization returned an empty query; using original query")
+            return query
         if rewritten != query:
             logger.info(f"[history] contextualized: {query!r} → {rewritten!r}")
         return rewritten
     except Exception as e:
         logger.warning(f"[history] contextualization failed, using raw query: {e}")
         return query
+
+
+def _sources_from_chunks(context_chunks: list) -> list:
+    """Shape retrieved chunks into the public `context_sources` format (same as /chat)."""
+    return [
+        {
+            "document_id": c.get("payload", {}).get("document_id"),
+            "name": c.get("payload", {}).get("name"),
+            "score": c.get("score"),
+        }
+        for c in context_chunks
+    ]
 
 
 async def _judge_response(trace_id: str, query: str, context_texts: list, answer: str) -> None:
@@ -96,7 +111,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     try:
         # Load conversation history first — needed to contextualize follow-up queries.
         conversation_id = request.conversation_id or str(uuid.uuid4())
-        raw_history = await redis.get(f"conv:{conversation_id}")
+        raw_history = await redis.get(f"rail-conv:{conversation_id}")
         history: list = raw_history if isinstance(raw_history, list) else []
         if len(history) > MAX_HISTORY_TURNS * 2:
             history = history[-(MAX_HISTORY_TURNS * 2):]
@@ -109,9 +124,12 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         if not history:
             query_hash = hashlib.sha256(request.query.encode()).hexdigest()[:16]
             filters_hash = hashlib.md5(
-                json.dumps({"level": request.level_filter, "type": request.type_filter}, sort_keys=True).encode()
+                json.dumps(
+                    {"category": request.category_filter, "topic": request.topic_filter},
+                    sort_keys=True,
+                ).encode()
             ).hexdigest()[:8]
-            cache_key = f"chat:{query_hash}:{filters_hash}"
+            cache_key = f"rail-chat:{query_hash}:{filters_hash}"
             cached_response = await redis.get(cache_key)
             if cached_response:
                 logger.info(f"Cache hit for query: {request.query}")
@@ -120,24 +138,24 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
                 return ChatResponse(**cached_response)
 
         # Contextualize query before guardrail: "What are its skills?" →
-        # "What are Agumon's skills?" so the guardrail sees the full intent.
+        # A follow-up is made self-contained so the guardrail sees the full intent.
         # No-op (and no LLM call) when history is empty.
         retrieval_query = await _contextualize_query(request.query, history, llm_client)
 
         # Guardrail — runs on the contextualized query so follow-up questions
-        # about a previously discussed Digimon are never wrongly blocked.
+        # about a previously discussed rail topic are never wrongly blocked.
         guard = InputGuard(llm_client)
-        if not await guard.is_digimon_related(retrieval_query):
+        if not await guard.is_rail_related(retrieval_query):
             raise HTTPException(status_code=400, detail=OFF_TOPIC_MESSAGE)
 
         # Build filters if provided
         filters = None
-        if request.level_filter or request.type_filter:
+        if request.category_filter or request.topic_filter:
             filters = {}
-            if request.level_filter:
-                filters["level"] = request.level_filter
-            if request.type_filter:
-                filters["type"] = request.type_filter
+            if request.category_filter:
+                filters["category"] = request.category_filter
+            if request.topic_filter:
+                filters["topic"] = request.topic_filter
 
         # Retrieve relevant chunks
         retrieval_start = time.time()
@@ -170,7 +188,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         # Extract context sources
         context_sources = [
             {
-                "digimon_id": chunk.get("payload", {}).get("digimon_id"),
+                "document_id": chunk.get("payload", {}).get("document_id"),
                 "name": chunk.get("payload", {}).get("name"),
                 "score": chunk.get("score")
             }
@@ -180,7 +198,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         # Save updated conversation history (plain query/answer, no context)
         history.append({"role": "user", "content": request.query})
         history.append({"role": "assistant", "content": llm_response["content"]})
-        await redis.set(f"conv:{conversation_id}", history, ttl=3600)
+        await redis.set(f"rail-conv:{conversation_id}", history, ttl=3600)
 
         # Build response
         response = ChatResponse(
@@ -240,7 +258,7 @@ async def chat_stream(request: ChatRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
     redis_pre = RedisManager()
     try:
-        raw_hist = await redis_pre.get(f"conv:{conversation_id}")
+        raw_hist = await redis_pre.get(f"rail-conv:{conversation_id}")
         history: list = raw_hist if isinstance(raw_hist, list) else []
         if len(history) > MAX_HISTORY_TURNS * 2:
             history = history[-(MAX_HISTORY_TURNS * 2):]
@@ -254,7 +272,7 @@ async def chat_stream(request: ChatRequest):
     try:
         retrieval_query = await _contextualize_query(request.query, history, llm_client)
         guard = InputGuard(llm_client)
-        if not await guard.is_digimon_related(retrieval_query):
+        if not await guard.is_rail_related(retrieval_query):
             raise HTTPException(status_code=400, detail=OFF_TOPIC_MESSAGE)
     finally:
         await llm_client.close()
@@ -263,12 +281,12 @@ async def chat_stream(request: ChatRequest):
     retriever = Retriever()
     try:
         filters = None
-        if request.level_filter or request.type_filter:
+        if request.category_filter or request.topic_filter:
             filters = {}
-            if request.level_filter:
-                filters["level"] = request.level_filter
-            if request.type_filter:
-                filters["type"] = request.type_filter
+            if request.category_filter:
+                filters["category"] = request.category_filter
+            if request.topic_filter:
+                filters["topic"] = request.topic_filter
         context_chunks = await retriever.retrieve(retrieval_query, limit=5, filters=filters)
     finally:
         await retriever.close()
@@ -282,6 +300,8 @@ async def chat_stream(request: ChatRequest):
         start_time = time.time()
         full_text = []
         try:
+            # Additive event: lets the UI render citations before/while tokens stream.
+            yield f"data: {json.dumps({'sources': _sources_from_chunks(context_chunks)})}\n\n"
             async for chunk in client.stream(user_message, history=history, system=PromptBuilder.SYSTEM_PROMPT):
                 if chunk["type"] == "token":
                     full_text.append(chunk["text"])
@@ -293,7 +313,7 @@ async def chat_stream(request: ChatRequest):
                     # Persist conversation history
                     history.append({"role": "user", "content": request.query})
                     history.append({"role": "assistant", "content": full_response})
-                    await redis.set(f"conv:{conversation_id}", history, ttl=3600)
+                    await redis.set(f"rail-conv:{conversation_id}", history, ttl=3600)
 
                     langfuse.trace_chat(
                         query=request.query,
@@ -303,7 +323,7 @@ async def chat_stream(request: ChatRequest):
                         latency_ms=latency_ms,
                     )
                     langfuse.flush()
-                    yield f"data: {json.dumps({'done': True, 'conversation_id': conversation_id, 'latency_ms': latency_ms})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'conversation_id': conversation_id, 'latency_ms': latency_ms, 'usage': chunk['usage']})}\n\n"
         except Exception as e:
             logger.error(f"Error in streaming chat: {e}")
             yield f"data: {json.dumps({'error': 'Internal server error'})}\n\n"
@@ -312,4 +332,8 @@ async def chat_stream(request: ChatRequest):
             await redis.close()
             langfuse.flush()
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
