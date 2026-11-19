@@ -4,8 +4,8 @@ from fastapi.testclient import TestClient
 
 
 async def _mock_stream(*args, **kwargs):
-    yield {"type": "token", "text": "Agumon"}
-    yield {"type": "token", "text": " is a Rookie Digimon."}
+    yield {"type": "token", "text": "Check the current IRCTC guidance"}
+    yield {"type": "token", "text": " before acting."}
     yield {"type": "done", "usage": {"prompt_tokens": 30, "completion_tokens": 10, "total_tokens": 40}}
 
 
@@ -13,7 +13,7 @@ async def _mock_stream(*args, **kwargs):
 
 
 @pytest.fixture(scope="module")
-def stream_client():
+def stream_client(mock_database_startup):
     with (
         patch("app.api.routes.chat.Retriever") as mock_retriever_cls,
         patch("app.api.routes.chat.LLMClient") as mock_llm_cls,
@@ -27,7 +27,14 @@ def stream_client():
             {
                 "id": 1,
                 "score": 0.9,
-                "payload": {"digimon_id": 1, "name": "Agumon", "chunk_text": "Agumon is a Rookie."},
+                "payload": {
+                    "document_id": 1,
+                    "name": "Cancelling an IRCTC e-ticket",
+                    "title": "Cancelling an IRCTC e-ticket",
+                    "source_url": "https://contents.irctc.co.in/en/eticketCancel.html",
+                    "last_verified": "2026-11-18",
+                    "chunk_text": "Check the current IRCTC guidance before acting.",
+                },
             }
         ])
         retriever_instance.close = AsyncMock()
@@ -35,7 +42,7 @@ def stream_client():
 
         llm_instance = MagicMock()
         llm_instance.chat = AsyncMock(return_value={
-            "content": "Agumon is a Rookie Digimon.",
+            "content": "Check the current IRCTC guidance before acting.",
             "model": "claude-haiku-4-5-20251001",
             "usage": {"prompt_tokens": 30, "completion_tokens": 10, "total_tokens": 40},
         })
@@ -50,7 +57,7 @@ def stream_client():
         mock_redis_cls.return_value = redis_instance
 
         guard_instance = MagicMock()
-        guard_instance.is_digimon_related = AsyncMock(return_value=True)
+        guard_instance.is_rail_related = AsyncMock(return_value=True)
         mock_guard_cls.return_value = guard_instance
 
         langfuse_instance = MagicMock()
@@ -71,17 +78,17 @@ def stream_client():
 
 
 def test_chat_stream_returns_200(stream_client):
-    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "How do I cancel an e-ticket?"}) as response:
         assert response.status_code == 200
 
 
 def test_chat_stream_content_type(stream_client):
-    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "How do I cancel an e-ticket?"}) as response:
         assert "text/event-stream" in response.headers["content-type"]
 
 
 def test_chat_stream_yields_sse_chunks(stream_client):
-    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "How do I cancel an e-ticket?"}) as response:
         body = b"".join(response.iter_bytes())
     assert b"data:" in body
     assert b'"token"' in body
@@ -90,11 +97,12 @@ def test_chat_stream_yields_sse_chunks(stream_client):
 
 def test_chat_stream_emits_sources_event_before_tokens(stream_client):
     import json
-    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "How do I cancel an e-ticket?"}) as response:
         body = b"".join(response.iter_bytes()).decode()
     events = [json.loads(b[len("data: "):]) for b in body.split("\n\n") if b.startswith("data: ")]
     assert "sources" in events[0]
-    assert events[0]["sources"][0]["name"] == "Agumon"
+    assert events[0]["sources"][0]["name"] == "Cancelling an IRCTC e-ticket"
+    assert events[0]["sources"][0]["document_id"] == 1
     assert any("token" in e for e in events)
     done = events[-1]
     assert done["done"] is True and done["conversation_id"]
@@ -102,6 +110,6 @@ def test_chat_stream_emits_sources_event_before_tokens(stream_client):
 
 
 def test_chat_stream_sets_proxy_friendly_headers(stream_client):
-    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "Tell me about Agumon"}) as response:
+    with stream_client.stream("POST", "/api/v1/chat/stream", json={"query": "How do I cancel an e-ticket?"}) as response:
         assert response.headers["cache-control"] == "no-cache"
         assert response.headers["x-accel-buffering"] == "no"

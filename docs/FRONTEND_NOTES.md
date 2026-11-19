@@ -20,8 +20,10 @@
 - B1–B5 applied and tested in `b96015a` (`feat(api): add frontend contracts and filters`).
 
 ## Known limitations
-- AI requests require valid Anthropic and Voyage API keys and populated Qdrant data; no keys are embedded in the frontend.
+- AI requests require valid Groq and Voyage API keys and the rail guidance corpus to be indexed; no keys are embedded in the frontend.
 - The compose overlay expects a local root `.env` file, which is intentionally not committed.
+- The seed corpus is a manually maintained summary of official IRCTC pages; it is not automatically refreshed and is not a live schedule, availability, PNR, booking, or refund service.
+- The interface follows the supplied paper, ink, forest-green, and editorial typography direction; web fonts fall back to local system fonts if unavailable.
 - Agent and Corrective-RAG calls are non-streaming; the browser can stop waiting, but the backend may continue processing.
 - The manual real-backend QA and Lighthouse targets require configured keys, ingested data, and a production deployment.
 

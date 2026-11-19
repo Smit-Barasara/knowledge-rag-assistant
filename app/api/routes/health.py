@@ -12,4 +12,4 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
-    return HealthResponse(status="healthy", message="Digimon RAG Assistant is running")
+    return HealthResponse(status="healthy", message="Indian Rail Travel Assistant is running")

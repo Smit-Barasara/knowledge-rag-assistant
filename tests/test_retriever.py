@@ -25,10 +25,10 @@ async def test_retrieve_returns_chunks(mock_qdrant, mock_embedder, sample_chunks
     mock_qdrant.search = AsyncMock(return_value=sample_chunks)
 
     retriever = Retriever()
-    results = await retriever.retrieve("Tell me about Agumon")
+    results = await retriever.retrieve("How do I cancel an e-ticket?")
 
-    assert len(results) == 2
-    assert results[0]["payload"]["name"] == "Agumon"
+    assert len(results) == 1
+    assert results[0]["payload"]["name"] == "Cancelling an IRCTC e-ticket"
 
 
 async def test_retrieve_empty_when_no_embedding(mock_qdrant, mock_embedder):
@@ -63,7 +63,7 @@ async def test_retrieve_passes_filters(mock_qdrant, mock_embedder, sample_chunks
     mock_qdrant.search = AsyncMock(return_value=sample_chunks)
 
     retriever = Retriever()
-    await retriever.retrieve("rookie digimon", filters={"level": "Rookie"})
+    await retriever.retrieve("cancellation", filters={"category": "Tickets"})
 
     _, kwargs = mock_qdrant.search.call_args
-    assert kwargs.get("filter_params") == {"level": "Rookie"}
+    assert kwargs.get("filter_params") == {"category": "Tickets"}

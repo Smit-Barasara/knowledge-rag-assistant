@@ -3,7 +3,7 @@ import { z } from 'zod'
 const numberSchema = z.number()
 
 export const ContextSourceSchema = z.object({
-  digimon_id: numberSchema.nullable(),
+  document_id: numberSchema.nullable(),
   name: z.string().nullable(),
   score: numberSchema.nullable(),
 })
@@ -42,29 +42,30 @@ export const GraphResponseSchema = z.object({
   rewritten_query: z.string().nullable().optional(),
 })
 
-export const DigimonListItemSchema = z.object({
+export const GuidanceListItemSchema = z.object({
   id: numberSchema,
-  name: z.string(),
-  level: z.string().nullable(),
-  type: z.string().nullable(),
-  attribute: z.string().nullable().optional(),
-  image_url: z.string().nullable().optional(),
+  title: z.string(),
+  category: z.string(),
+  topic: z.string(),
+  summary: z.string(),
+  source_url: z.string().url(),
+  last_verified: z.string(),
 })
 
-export const DigimonDetailSchema = z.object({
+export const GuidanceDetailSchema = z.object({
   id: numberSchema,
-  name: z.string(),
-  level: z.string().nullable(),
-  type: z.string().nullable(),
-  attribute: z.string().nullable(),
-  description: z.string().nullable(),
-  image_url: z.string().nullable(),
+  title: z.string(),
+  category: z.string(),
+  topic: z.string(),
+  summary: z.string(),
+  content: z.string(),
+  source_url: z.string().url(),
+  last_verified: z.string(),
 })
 
-export const FiltersSchema = z.object({
-  levels: z.array(z.string()),
-  types: z.array(z.string()),
-  attributes: z.array(z.string()),
+export const GuidanceFiltersSchema = z.object({
+  categories: z.array(z.string()),
+  topics: z.array(z.string()),
 })
 
 export const HealthSchema = z.object({
@@ -94,8 +95,8 @@ export type ContextSource = z.infer<typeof ContextSourceSchema>
 export type ChatResponse = z.infer<typeof ChatResponseSchema>
 export type AgentResponse = z.infer<typeof AgentResponseSchema>
 export type GraphResponse = z.infer<typeof GraphResponseSchema>
-export type DigimonListItem = z.infer<typeof DigimonListItemSchema>
-export type DigimonDetail = z.infer<typeof DigimonDetailSchema>
-export type DigimonFilters = z.infer<typeof FiltersSchema>
+export type GuidanceListItem = z.infer<typeof GuidanceListItemSchema>
+export type GuidanceDetail = z.infer<typeof GuidanceDetailSchema>
+export type GuidanceFilters = z.infer<typeof GuidanceFiltersSchema>
 export type Health = z.infer<typeof HealthSchema>
 export type StreamEvent = z.infer<typeof StreamEventSchema>

@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "title": "Cancelling an IRCTC e-ticket",
+    "category": "Tickets",
+    "topic": "Cancellation and refunds",
+    "summary": "How the official IRCTC guide describes online e-ticket cancellation and post-chart TDR claims.",
+    "content": "IRCTC's e-ticket cancellation guide says an e-ticket can be cancelled online before reservation-chart preparation. After chart preparation, the guide directs users to the online Ticket Deposit Receipt (TDR) process where applicable. A TDR is a request for review, not a promise of a refund; the relevant Railway rules and the ticket's circumstances determine the outcome. Deadlines depend on ticket status and departure time. Check the current IRCTC cancellation page and the details for your own booking before acting. This assistant cannot inspect a PNR, calculate a refund, or decide whether a refund claim will be accepted.",
+    "source_url": "https://contents.irctc.co.in/en/eticketCancel.html",
+    "last_verified": "2026-11-18"
+  },
+  {
+    "id": 2,
+    "title": "Understanding Tatkal bookings",
+    "category": "Booking",
+    "topic": "Tatkal",
+    "summary": "A source-linked overview of the Tatkal booking guide, with a reminder to verify current quota and timing.",
+    "content": "IRCTC's Tatkal booking guide describes Tatkal as a quota for eligible last-minute rail bookings and explains how to select the Tatkal quota while searching for a journey. The guide states that booking opens one day before the train's originating-station departure date and lists separate opening times for AC and non-AC classes. It also describes a limit on passengers per Tatkal e-ticket. These rules and opening times can change, so confirm the current details shown on IRCTC for the specific train and class. This assistant does not book tickets or check live availability.",
+    "source_url": "https://contents.irctc.co.in/en/TatkalBooking.html",
+    "last_verified": "2026-11-18"
+  },
+  {
+    "id": 3,
+    "title": "Finding trains and managing an e-ticket",
+    "category": "Journey planning",
+    "topic": "E-ticket basics",
+    "summary": "IRCTC's e-ticket guide explains where to search for trains and manage a booking.",
+    "content": "IRCTC's e-ticket guide describes using the Plan My Travel flow to find trains and fares. It also describes starting an e-ticket cancellation from My Transactions and Booked Ticket History. For a partially cancelled ticket, the guide says a fresh Electronic Reservation Slip should be carried by passengers continuing the journey. Check the current IRCTC site for the latest process. This assistant is not connected to schedules, seat availability, PNR status, or ticket booking.",
+    "source_url": "https://contents.irctc.co.in/en/bookEticket.html",
+    "last_verified": "2026-11-18"
+  }
+]

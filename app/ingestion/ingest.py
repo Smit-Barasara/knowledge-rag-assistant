@@ -1,222 +1,124 @@
 import asyncio
+import json
 import math
-from typing import List, Dict, Any, Tuple, Optional
+from pathlib import Path
+from typing import Any
+
 from qdrant_client.models import PointStruct
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.ingestion.dapi_client import DAPIClient
-from app.ingestion.embedder import Embedder
-from app.db.qdrant import QdrantManager
-from app.db.postgres import PostgresManager, DigimonMetadata
 from app.core.config import get_settings
+from app.db.postgres import PostgresManager
+from app.db.qdrant import QdrantManager
+from app.ingestion.embedder import Embedder
+
 import logging
 
 logger = logging.getLogger(__name__)
+GUIDANCE_PATH = Path(__file__).with_name("rail_guidance.json")
+
+
+def load_guidance_documents() -> list[dict[str, Any]]:
+    """Load and validate the curated, source-linked rail guidance corpus."""
+    with GUIDANCE_PATH.open(encoding="utf-8") as file:
+        documents = json.load(file)
+
+    required = {"id", "title", "category", "topic", "summary", "content", "source_url", "last_verified"}
+    if not isinstance(documents, list) or not documents:
+        raise ValueError(f"{GUIDANCE_PATH} must contain a non-empty list of documents.")
+
+    ids: set[int] = set()
+    for index, document in enumerate(documents):
+        if not isinstance(document, dict) or not required.issubset(document):
+            raise ValueError(f"Rail guidance document {index} is missing required fields.")
+        if not isinstance(document["id"], int) or document["id"] in ids:
+            raise ValueError(f"Rail guidance document {index} has a missing or duplicate integer id.")
+        if not document["source_url"].startswith("https://"):
+            raise ValueError(f"Rail guidance document {document['id']} must use an HTTPS source URL.")
+        ids.add(document["id"])
+    return documents
 
 
 class DataIngestor:
-    """Ingest Digimon data from DAPI into Qdrant and PostgreSQL."""
+    """Ingest the curated Indian rail guidance corpus into Qdrant and PostgreSQL."""
 
     def __init__(self):
         settings = get_settings()
-        self.dapi_client = DAPIClient()
         self.embedder = Embedder()
         self.qdrant = QdrantManager()
         self.postgres = PostgresManager()
-        self.limit = settings.ingest_limit
         self.batch_size = settings.voyage_embed_batch_size
         self.rpm = settings.voyage_rpm
 
-    def _extract_description(self, digimon: Dict[str, Any]) -> str:
-        """Extract English description from the individual DAPI endpoint format."""
-        descriptions = digimon.get("descriptions", [])
-        if descriptions:
-            en = next((d.get("description", "") for d in descriptions if d.get("language") == "en_us"), "")
-            return en or descriptions[0].get("description", "")
-        return digimon.get("description", "")
+    async def _embed_all(self, texts: list[str]) -> list[list[float]]:
+        """Embed all document texts in rate-limited batches."""
+        if self.batch_size < 1 or self.rpm < 1:
+            raise ValueError("VOYAGE_EMBED_BATCH_SIZE and VOYAGE_RPM must be positive.")
 
-    def _prepare_text_chunks(self, digimon: Dict[str, Any]) -> List[str]:
-        """Prepare text chunks for embedding from a single Digimon."""
-        chunks = []
-        name = digimon.get("name", "")
-        level = digimon.get("levels", [{}])[0].get("level", "") if digimon.get("levels") else ""
-        digimon_type = digimon.get("types", [{}])[0].get("type", "") if digimon.get("types") else ""
-        attribute = digimon.get("attributes", [{}])[0].get("attribute", "") if digimon.get("attributes") else ""
-        description = self._extract_description(digimon)
-
-        chunks.append(f"{name} is a {level} level Digimon with {digimon_type} type and {attribute} attribute.")
-
-        if description:
-            chunks.append(f"{name}: {description}")
-
-        skills = digimon.get("skills", [])
-        skill_names = [s.get("skill", "") for s in skills if s.get("skill")]
-        if skill_names:
-            chunks.append(f"{name} has the following skills: {', '.join(skill_names)}")
-
-        priors = [d.get("digimon", "") for d in digimon.get("priorEvolutions", []) if d.get("digimon")]
-        nexts = [d.get("digimon", "") for d in digimon.get("nextEvolutions", []) if d.get("digimon")]
-        if priors or nexts:
-            parts = []
-            if priors:
-                parts.append(f"digivolves from {', '.join(priors[:10])}")
-            if nexts:
-                parts.append(f"digivolves into {', '.join(nexts[:15])}")
-            chunks.append(f"{name} {' and '.join(parts)}.")
-
-        return chunks
-
-    async def _fetch_details(self, basic_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Fetch full Digimon details concurrently (max 10 in-flight at a time)."""
-        semaphore = asyncio.Semaphore(10)
-
-        async def fetch_one(basic: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            async with semaphore:
-                return await self.dapi_client.get_digimon(basic["id"])
-
-        results = await asyncio.gather(*[fetch_one(b) for b in basic_list], return_exceptions=True)
-        full = [r for r in results if r and not isinstance(r, Exception)]
-        logger.info(f"Fetched full details for {len(full)}/{len(basic_list)} Digimon")
-        return full
-
-    async def _embed_all(self, texts: List[str]) -> List[List[float]]:
-        """Embed all texts in rate-limited batches (free Voyage AI tier: 3 RPM)."""
         delay = 60.0 / self.rpm
         total_batches = math.ceil(len(texts) / self.batch_size)
-        estimated_minutes = (total_batches * delay) / 60
-
         logger.info(
-            f"Embedding {len(texts)} chunks in {total_batches} batches "
-            f"({self.batch_size} chunks/batch, {self.rpm} RPM). "
-            f"Estimated time: ~{estimated_minutes:.1f} min"
+            "Embedding %d guidance documents in %d batches (%d per batch, %d RPM)",
+            len(texts),
+            total_batches,
+            self.batch_size,
+            self.rpm,
         )
 
-        all_embeddings: List[List[float]] = []
+        embeddings: list[list[float]] = []
         for i in range(0, len(texts), self.batch_size):
-            batch_num = i // self.batch_size + 1
-            batch = texts[i : i + self.batch_size]
-
-            if i > 0:
-                logger.info(f"Rate limit pause ({delay:.0f}s)...")
+            if i:
                 await asyncio.sleep(delay)
+            batch = texts[i : i + self.batch_size]
+            logger.info("Embedding batch %d/%d (%d documents)", i // self.batch_size + 1, total_batches, len(batch))
+            result = await self.embedder.embed_texts(batch, input_type="document")
+            if len(result) != len(batch):
+                raise RuntimeError("Embedding API returned an incomplete batch. Check the API key and rate limits.")
+            embeddings.extend(result)
+        return embeddings
 
-            logger.info(f"Batch {batch_num}/{total_batches} — {len(batch)} chunks")
-            embeddings = await self.embedder.embed_texts(batch, input_type="document")
-
-            if not embeddings:
-                logger.error(f"Batch {batch_num} returned no embeddings — aborting")
-                raise RuntimeError("Embedding API returned empty response. Check rate limits.")
-
-            all_embeddings.extend(embeddings)
-
-        return all_embeddings
-
-    async def ingest(self):
-        """Main ingestion pipeline."""
-        logger.info("Starting data ingestion...")
-
+    async def ingest(self) -> None:
+        documents = load_guidance_documents()
+        logger.info("Starting ingestion of %d rail guidance documents", len(documents))
         await self.qdrant.create_collection()
         self.postgres.create_tables()
 
-        # Phase 1: Fetch basic list, then full details for each Digimon
-        basic_list = await self.dapi_client.get_all_digimons()
-        total_available = len(basic_list)
-        if self.limit > 0:
-            logger.info(f"INGEST_LIMIT={self.limit} — processing {self.limit} of {total_available} Digimon")
-            basic_list = basic_list[: self.limit]
+        texts = [
+            f"{document['title']}\nCategory: {document['category']}\nTopic: {document['topic']}\n"
+            f"{document['summary']}\n\n{document['content']}"
+            for document in documents
+        ]
+        embeddings = await self._embed_all(texts)
 
-        digimons = await self._fetch_details(basic_list)
-        logger.info(f"Ready to ingest {len(digimons)} Digimon")
-
-        # Phase 2: Collect all text chunks
-        all_texts: List[str] = []
-        chunk_meta: List[Tuple[Dict[str, Any], int]] = []
-
-        for digimon in digimons:
-            chunks = self._prepare_text_chunks(digimon)
-            for j, chunk in enumerate(chunks):
-                all_texts.append(chunk)
-                chunk_meta.append((digimon, j))
-
-        logger.info(f"Prepared {len(all_texts)} chunks from {len(digimons)} Digimon")
-
-        # Phase 3: Embed all chunks in rate-limited batches
-        all_embeddings = await self._embed_all(all_texts)
-
-        # Phase 4: Build Qdrant points + PostgreSQL records (no I/O here)
-        points: List[PointStruct] = []
-        pg_records: List[Dict[str, Any]] = []
-        seen_ids: set = set()
-
-        for (text, (digimon, j)), embedding in zip(zip(all_texts, chunk_meta), all_embeddings):
-            digimon_id = digimon.get("id")
-            name = digimon.get("name")
-            level = digimon.get("levels", [{}])[0].get("level", "") if digimon.get("levels") else ""
-            digimon_type = digimon.get("types", [{}])[0].get("type", "") if digimon.get("types") else ""
-            attribute = digimon.get("attributes", [{}])[0].get("attribute", "") if digimon.get("attributes") else ""
-
-            point_id = digimon_id * 100 + j
-            points.append(
-                PointStruct(
-                    id=point_id,
-                    vector=embedding,
-                    payload={
-                        "digimon_id": digimon_id,
-                        "name": name,
-                        "chunk_index": j,
-                        "chunk_text": text,
-                        "level": level,
-                        "type": digimon_type,
-                        "attribute": attribute,
-                    },
-                )
+        points = [
+            PointStruct(
+                id=document["id"],
+                vector=embedding,
+                payload={
+                    "document_id": document["id"],
+                    "name": document["title"],
+                    "title": document["title"],
+                    "category": document["category"],
+                    "topic": document["topic"],
+                    "summary": document["summary"],
+                    "source_url": document["source_url"],
+                    "last_verified": document["last_verified"],
+                    "chunk_index": 0,
+                    "chunk_text": document["content"],
+                },
             )
+            for document, embedding in zip(documents, embeddings, strict=True)
+        ]
 
-            if digimon_id not in seen_ids:
-                seen_ids.add(digimon_id)
-                pg_records.append({
-                    "dapi_id": digimon_id,
-                    "name": name,
-                    "level": level or None,
-                    "type": digimon_type or None,
-                    "attribute": attribute or None,
-                    "description": self._extract_description(digimon) or None,
-                    "image_url": digimon.get("images", [{}])[0].get("href") if digimon.get("images") else None,
-                })
-
-        # Phase 5: Persist — Qdrant upsert + PostgreSQL upsert (safe to re-run)
         for i in range(0, len(points), 100):
             await self.qdrant.upsert_points(points[i : i + 100])
 
-        session = self.postgres.get_session()
-        try:
-            if pg_records:
-                stmt = pg_insert(DigimonMetadata).values(pg_records)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["dapi_id"],
-                    set_={
-                        "name": stmt.excluded.name,
-                        "level": stmt.excluded.level,
-                        "type": stmt.excluded.type,
-                        "attribute": stmt.excluded.attribute,
-                        "description": stmt.excluded.description,
-                        "image_url": stmt.excluded.image_url,
-                    },
-                )
-                session.execute(stmt)
-            session.commit()
-        finally:
-            session.close()
+        self.postgres.upsert_rail_guidance_documents(documents)
+        self.postgres.close()
 
-        await self.dapi_client.close()
-        logger.info(
-            f"Ingestion complete — {len(digimons)} Digimon, {len(all_texts)} chunks stored. "
-            f"(Set INGEST_LIMIT=0 in .env to ingest all {total_available} Digimon)"
-        )
+        logger.info("Ingestion complete: %d official-source guidance documents indexed.", len(documents))
 
 
 async def main():
-    ingestor = DataIngestor()
-    await ingestor.ingest()
+    await DataIngestor().ingest()
 
 
 if __name__ == "__main__":

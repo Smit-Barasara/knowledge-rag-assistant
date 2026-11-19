@@ -10,8 +10,8 @@ describe('settings store', () => {
       streaming: true,
       showMetrics: true,
       reduceMotion: null,
-      level: '',
-      type: '',
+      category: '',
+      topic: '',
     })
   })
 
@@ -20,10 +20,10 @@ describe('settings store', () => {
     settings.setTheme('dark')
     settings.setMode('graph')
     settings.setStreaming(false)
-    settings.setFilters('Rookie', 'Reptile')
-    const persisted = window.localStorage.getItem('digimon-rag-settings')
+    settings.setFilters('Tickets', 'Tatkal')
+    const persisted = window.localStorage.getItem('rail-guidance-settings')
     expect(persisted).toContain('"theme":"dark"')
     expect(persisted).toContain('"mode":"graph"')
-    expect(persisted).toContain('"level":"Rookie"')
+    expect(persisted).toContain('"category":"Tickets"')
   })
 })

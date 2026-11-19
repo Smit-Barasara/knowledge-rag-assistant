@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Check, Clock3, Copy, Download, Menu, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react'
-import { getFilters } from '../../api/digimon'
+import { ArrowRight, ArrowUp, Check, Clock3, Copy, Download, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react'
+import { getGuidanceFilters } from '../../api/rail-guidance'
 import { useConversationStore } from '../../store/conversations'
 import type { ChatMode, Message } from '../../store/conversations'
 import { useSettingsStore } from '../../store/settings'
@@ -10,12 +10,11 @@ import { useHealth } from '../status/useHealth'
 import { useChatController } from './useChatController'
 
 const Markdown = lazy(() => import('../../components/Markdown').then((module) => ({ default: module.Markdown })))
-const fallbackLevels = ['Fresh', 'In-Training', 'Rookie', 'Champion', 'Ultimate', 'Mega']
 const suggestedPrompts = [
-  'Tell me about Agumon',
-  "What are Agumon's digivolutions?",
-  'Which Rookie Digimon are Reptile type?',
-  'Compare Greymon and Garurumon',
+  'How does the IRCTC guide say to cancel an e-ticket?',
+  'What should I check before booking Tatkal?',
+  'Where can I search for trains on IRCTC?',
+  'Can you check my PNR or live seat availability?',
 ]
 const modeLabels: Record<ChatMode, string> = { rag: 'Standard RAG', agent: 'Agent', graph: 'Corrective RAG' }
 
@@ -29,14 +28,13 @@ export function ChatPage() {
   const mode = useSettingsStore((state) => state.mode)
   const setMode = useSettingsStore((state) => state.setMode)
   const streaming = useSettingsStore((state) => state.streaming)
-  const level = useSettingsStore((state) => state.level)
-  const type = useSettingsStore((state) => state.type)
+  const category = useSettingsStore((state) => state.category)
+  const topic = useSettingsStore((state) => state.topic)
   const setFilters = useSettingsStore((state) => state.setFilters)
   const health = useHealth()
-  const filters = useQuery({ queryKey: ['digimon-filters'], queryFn: ({ signal }) => getFilters(signal), staleTime: 3_600_000, retry: false })
+  const filters = useQuery({ queryKey: ['rail-guidance-filters'], queryFn: ({ signal }) => getGuidanceFilters(signal), staleTime: 3_600_000, retry: false })
   const controller = useChatController()
   const [query, setQuery] = useState('')
-  const [showChats, setShowChats] = useState(false)
   const [modeNotice, setModeNotice] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -47,11 +45,13 @@ export function ChatPage() {
   const busy = controller.busy
   const sendMessage = controller.send
   const online = health.isSuccess
-  const filteredLevels = filters.data?.levels ?? (filters.isError ? fallbackLevels : [])
-  const filteredTypes = filters.data?.types ?? []
+  const categories = filters.data?.categories ?? []
+  const topics = filters.data?.topics ?? []
 
   useEffect(() => {
-    if (previousMode.current !== mode && mode !== 'rag' && messages.length > 0) setModeNotice(true)
+    if (previousMode.current !== mode && mode !== 'rag' && messages.length > 0) {
+      setModeNotice(true)
+    }
     previousMode.current = mode
   }, [mode, messages.length])
 
@@ -108,13 +108,16 @@ export function ChatPage() {
 
   return (
     <div className="chat-layout">
-      <aside className={`conversation-sidebar ${showChats ? 'conversation-sidebar-open' : ''}`} aria-label="Conversations">
+      <aside className="conversation-sidebar" aria-label="Conversations">
         <div className="sidebar-heading">
           <div><span className="eyebrow">YOUR SPACE</span><h2>Conversations</h2></div>
-          <button className="icon-button mobile-only" aria-label="Close conversations" onClick={() => setShowChats(false)}><X size={18} /></button>
         </div>
-        <button className="button button-outline sidebar-new" onClick={() => { createConversation(); setQuery(''); setShowChats(false) }}>
-          <Plus size={16} /> New conversation
+        <button
+          className="icon-button sidebar-new"
+          aria-label="New conversation"
+          onClick={() => { createConversation(); setQuery('') }}
+        >
+          <Plus size={18} />
         </button>
         <div className="conversation-list">
           {sortedConversations.map((item) => (
@@ -123,7 +126,7 @@ export function ChatPage() {
               id={item.id}
               title={item.title}
               active={item.id === activeId}
-              onSelect={() => { setActive(item.id); setShowChats(false) }}
+              onSelect={() => setActive(item.id)}
             />
           ))}
         </div>
@@ -134,16 +137,17 @@ export function ChatPage() {
           <span>Stored only in this browser</span>
         </div>
       </aside>
-      {showChats && <button className="sidebar-scrim" aria-label="Close conversations" onClick={() => setShowChats(false)} />}
       <section className="chat-main" aria-label="Chat">
         <div className="chat-toolbar">
-          <button className="icon-button mobile-only" aria-label="Open conversations" onClick={() => setShowChats(true)}><Menu size={18} /></button>
-          <div className="active-title">{conversation?.title ?? 'New conversation'}<span>{modeLabels[mode]}</span></div>
-          {conversation && now - conversation.updatedAt > 60 * 60 * 1000 && mode === 'rag' && (
-            <span className="memory-note"><Clock3 size={14} /> Earlier context may no longer be remembered</span>
-          )}
+          <div className="column thread-header-column">
+            <div className="active-title">{conversation?.title ?? 'New conversation'}</div>
+            <ModeSwitch mode={mode} disabled={busy} onChange={(next) => setMode(next)} />
+          </div>
         </div>
-        {modeNotice && (
+        {conversation && messages.length > 0 && now - conversation.updatedAt > 60 * 60 * 1000 && mode === 'rag' && (
+          <span className="memory-note"><Clock3 size={14} /> Earlier context may no longer be remembered</span>
+        )}
+        {modeNotice && mode !== 'rag' && (
           <div className="inline-notice" role="status">
             This mode doesn’t remember earlier messages.
             <button className="icon-button" aria-label="Dismiss notice" onClick={() => setModeNotice(false)}><X size={15} /></button>
@@ -174,23 +178,6 @@ export function ChatPage() {
           )}
         </div>
         <div className="composer-wrap">
-          {mode === 'rag' && (
-            <FilterBar
-              levels={filteredLevels}
-              types={filteredTypes}
-              level={level}
-              type={type}
-              onChange={setFilters}
-              available={!filters.isError}
-              disabled={busy}
-            />
-          )}
-          {mode !== 'rag' && (
-            <div className="filter-disabled" title="Not available in this mode">
-              Filters are available in Standard RAG mode
-            </div>
-          )}
-          <ModeSwitch mode={mode} disabled={busy} onChange={(next) => setMode(next)} />
           <form
             className="composer"
             onSubmit={(event) => {
@@ -198,14 +185,14 @@ export function ChatPage() {
               send()
             }}
           >
-            <label className="sr-only" htmlFor="chat-prompt">Ask about Digimon</label>
+            <label className="sr-only" htmlFor="chat-prompt">Ask about Indian rail travel</label>
             <textarea
               id="chat-prompt"
               ref={composerRef}
               value={query}
               maxLength={2000}
               rows={1}
-              placeholder={online ? 'Ask anything about Digimon…' : 'Waiting for the API to reconnect…'}
+              placeholder={online ? 'Ask about Indian rail travel guidance…' : 'Waiting for the API to reconnect…'}
               disabled={!online || busy}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -215,16 +202,28 @@ export function ChatPage() {
                 }
               }}
             />
-            {query.length >= 1800 && <span className="character-count" aria-live="polite">{query.length}/2000</span>}
-            {busy ? (
-              <button type="button" className="send-button stop-button" aria-label="Stop response" onClick={controller.stop}><Square size={16} fill="currentColor" /></button>
-            ) : (
-              <button type="submit" className="send-button" aria-label="Send message" disabled={!online || !query.trim() || query.length > 2000}>
-                <ArrowUp size={18} />
-              </button>
-            )}
+            <div className="composer-toolbar">
+              <FilterBar
+                categories={categories}
+                topics={topics}
+                category={category}
+                topic={topic}
+                onChange={setFilters}
+                available={!filters.isError}
+                disabled={busy || mode !== 'rag'}
+              />
+              {query.length >= 1800 && <span className="character-count" aria-live="polite">{query.length}/2000</span>}
+              {busy ? (
+                <button type="button" className="send-button stop-button" aria-label="Stop response" onClick={controller.stop}><Square size={16} fill="currentColor" /></button>
+              ) : (
+                <button type="submit" className="send-button" aria-label="Send message" disabled={!online || !query.trim() || query.length > 2000}>
+                  <ArrowUp size={18} />
+                </button>
+              )}
+            </div>
           </form>
           <p className="composer-hint">{streaming && mode === 'rag' ? 'Enter to send · Shift + Enter for a new line · Esc to stop' : 'Enter to send · Shift + Enter for a new line'} · Max 2,000 characters</p>
+          <p className="chat-disclaimer">General guidance only · Check IRCTC for current journey details</p>
         </div>
       </section>
       <div className="visually-hidden" role="status" aria-live="polite">
@@ -284,18 +283,19 @@ function ConversationItem({ id, title, active, onSelect }: { id: string; title: 
 function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
   return (
     <div className="empty-state">
-      <div className="hero-orbit" aria-hidden="true"><span>デジモン</span></div>
-      <span className="eyebrow">YOUR DIGIMON KNOWLEDGE DESK</span>
-      <h1>Every evolution starts<br />with a question.</h1>
-      <p>Ask about Digimon, compare evolutions, or explore the knowledge base.</p>
-      <div className="prompt-grid">
+      <span className="eyebrow">INDIAN RAIL · SOURCE-LED GUIDANCE</span>
+      <h1>Good journeys<br />begin with clear answers.</h1>
+      <p>Explore general ticketing and journey guidance from official sources. Check IRCTC for current details before you travel.</p>
+      <div className="prompt-grid route-list">
         {suggestedPrompts.map((prompt, index) => (
-          <button key={prompt} className="suggestion-card" onClick={() => onPrompt(prompt)}>
-            <span>0{index + 1}</span>{prompt}<ArrowDown size={15} aria-hidden="true" />
+          <button key={prompt} className="suggestion-card route-item" onClick={() => onPrompt(prompt)}>
+            <span className="prompt-index">0{index + 1}</span>
+            <span className="prompt-text">{prompt}</span>
+            <ArrowRight className="arrow" size={16} aria-hidden="true" />
           </button>
         ))}
       </div>
-      <a className="browse-link" href="/explore">Browse the Digimon archive <ArrowUp size={14} /></a>
+      <a className="browse-link" href="/explore">Browse rail guidance <ArrowUp size={14} /></a>
     </div>
   )
 }
@@ -320,7 +320,7 @@ function MessageRow({
   previousMessage?: Message
 }) {
   const [copied, setCopied] = useState(false)
-  const suggestions = ['Tell me about Agumon', 'Show me Rookie Digimon', 'Compare two Digimon']
+  const suggestions = ['Ask about ticket cancellation', 'Check the Tatkal guidance', 'Browse rail guidance']
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(message.content)
@@ -334,7 +334,7 @@ function MessageRow({
   return (
     <article className={`message-row message-${message.role}`} aria-label={`${message.role === 'user' ? 'You' : 'Assistant'} message`}>
       <div className={`avatar avatar-${message.role}`} aria-hidden="true">{message.role === 'user' ? 'S' : 'D'}</div>
-      <div className="message-content">
+      <div className={`message-content ${busy && message.content ? 'message-streaming' : ''}`}>
         <div className="message-meta">
           <strong>{message.role === 'user' ? 'You' : 'Archive assistant'}</strong>
           {message.role === 'assistant' && <span className="mode-badge">{modeLabels[message.mode]}</span>}
@@ -358,14 +358,11 @@ function MessageRow({
           <div className="sources-list" aria-label="Supporting sources">
             <span className="sources-label">SOURCES</span>
             {message.sources.map((source, index) => {
-              const score = source.score === null ? null : Math.max(0, Math.min(100, Math.round(((source.score - 0.5) / 0.5) * 100)))
-              return source.digimonId === null ? (
+              return source.documentId === null ? (
                 <span key={`${source.name}-${index}`} className="source-chip">{source.name}</span>
               ) : (
-                <button key={source.digimonId} className="source-chip" onClick={() => onSource(source.digimonId!)}>
+                <button key={source.documentId} className="source-chip" onClick={() => onSource(source.documentId!)}>
                   {source.name}
-                  {score !== null && <span className="relevance-meter" aria-label={`Relevance ${score}%`}><i style={{ width: `${score}%` }} /></span>}
-                  {score !== null && <small>{score}%</small>}
                 </button>
               )
             })}
@@ -410,39 +407,37 @@ function MessageRow({
 }
 
 function FilterBar({
-  levels,
-  types,
-  level,
-  type,
+  categories,
+  topics,
+  category,
+  topic,
   onChange,
   available,
   disabled,
 }: {
-  levels: string[]
-  types: string[]
-  level: string
-  type: string
-  onChange: (level: string, type: string) => void
+  categories: string[]
+  topics: string[]
+  category: string
+  topic: string
+  onChange: (category: string, topic: string) => void
   available: boolean
   disabled: boolean
 }) {
   return (
-    <div className="filter-bar" aria-label="Search filters">
-      <label>Level
-        <select value={level} disabled={disabled} onChange={(event) => onChange(event.target.value, type)}>
-          <option value="">Any level</option>{levels.map((item) => <option key={item}>{item}</option>)}
+    <div className="filter-bar" aria-label="Search filters" title={disabled ? 'Filters are available in Standard RAG mode' : undefined}>
+      <label><span className="sr-only">Category</span>
+        <select value={category} disabled={disabled} onChange={(event) => onChange(event.target.value, topic)}>
+          <option value="">Any category</option>{categories.map((item) => <option key={item}>{item}</option>)}
         </select>
       </label>
-      {available && types.length > 0 && (
-        <label>Type
-          <select value={type} disabled={disabled} onChange={(event) => onChange(level, event.target.value)}>
-            <option value="">Any type</option>{types.map((item) => <option key={item}>{item}</option>)}
+      {available && topics.length > 0 && (
+        <label><span className="sr-only">Topic</span>
+          <select value={topic} disabled={disabled} onChange={(event) => onChange(category, event.target.value)}>
+            <option value="">Any topic</option>{topics.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
       )}
-      {(level || type) && <button className="text-button clear-filter" onClick={() => onChange('', '')} disabled={disabled}><X size={13} /> Clear filters</button>}
-      {level && <span className="filter-chip">{level}</span>}
-      {type && <span className="filter-chip">{type}</span>}
+      {(category || topic) && <button type="button" className="text-button clear-filter" onClick={() => onChange('', '')} disabled={disabled}><X size={13} /> Clear filters</button>}
     </div>
   )
 }

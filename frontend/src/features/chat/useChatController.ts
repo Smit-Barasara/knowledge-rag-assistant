@@ -135,8 +135,8 @@ export function useChatController() {
               : !retryMessageId && conversation?.serverConversationId
                 ? { conversation_id: conversation.serverConversationId }
                 : {}),
-            ...(settings.level ? { level_filter: settings.level } : {}),
-            ...(settings.type ? { type_filter: settings.type } : {}),
+            ...(settings.category ? { category_filter: settings.category } : {}),
+            ...(settings.topic ? { topic_filter: settings.topic } : {}),
           }
           if (settings.streaming) {
             let streamStarted = false
@@ -205,7 +205,7 @@ export function useChatController() {
         } else if (mode === 'agent') {
           const response = await agent(query, controller.signal)
           const counts = response.tool_calls.reduce<Record<string, number>>((result, name) => {
-            if (['rag_search', 'get_digimon_by_name', 'get_digimon_by_level', 'get_digimon_skills'].includes(name)) {
+            if (['rag_search', 'get_guidance_document'].includes(name)) {
               result[name] = (result[name] ?? 0) + 1
             }
             return result

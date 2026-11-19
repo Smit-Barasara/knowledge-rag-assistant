@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
 from typing import Optional
@@ -10,18 +11,18 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 
-class DigimonMetadata(Base):
-    """Store structured metadata about Digimons."""
-    __tablename__ = "digimon_metadata"
+class RailGuidanceDocument(Base):
+    """Store source-linked Indian rail travel guidance."""
+    __tablename__ = "rail_guidance_documents"
     
     id = Column(Integer, primary_key=True)
-    dapi_id = Column(Integer, unique=True, nullable=False)
-    name = Column(String(255), nullable=False)
-    level = Column(String(100))
-    type = Column(String(100))
-    attribute = Column(String(100))
-    description = Column(Text)
-    image_url = Column(String(500))
+    title = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=False)
+    topic = Column(String(100), nullable=False)
+    summary = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)
+    source_url = Column(String(1000), nullable=False)
+    last_verified = Column(String(10), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -52,6 +53,31 @@ class PostgresManager:
         """Create all tables."""
         Base.metadata.create_all(self.engine)
         logger.info("Created PostgreSQL tables")
+
+    def upsert_rail_guidance_documents(self, documents: list[dict]):
+        """Insert or update source-linked rail guidance records."""
+        session = self.get_session()
+        try:
+            statement = pg_insert(RailGuidanceDocument).values(documents)
+            statement = statement.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "title": statement.excluded.title,
+                    "category": statement.excluded.category,
+                    "topic": statement.excluded.topic,
+                    "summary": statement.excluded.summary,
+                    "content": statement.excluded.content,
+                    "source_url": statement.excluded.source_url,
+                    "last_verified": statement.excluded.last_verified,
+                },
+            )
+            session.execute(statement)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
     
     def get_session(self) -> Session:
         """Get a database session."""

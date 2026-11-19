@@ -69,7 +69,7 @@ async def rewrite_node(state: GraphState) -> dict:
     iterations = state.get("iterations", 0) + 1
 
     prompt = (
-        f"The following question did not yield relevant Digimon documents: '{original}'\n\n"
+        f"The following question did not yield relevant Indian rail guidance: '{original}'\n\n"
         "Rewrite it to be more specific and improve search results. "
         "Return only the rewritten question, nothing else."
     )

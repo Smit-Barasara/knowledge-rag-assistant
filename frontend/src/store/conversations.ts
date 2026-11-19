@@ -13,7 +13,7 @@ export interface Message {
   status: MessageStatus
   mode: ChatMode
   createdAt: number
-  sources?: { digimonId: number | null; name: string; score: number | null }[]
+  sources?: { documentId: number | null; name: string; score: number | null }[]
   meta?: {
     latencyMs?: number
     usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
@@ -139,7 +139,7 @@ export const useConversationStore = create<ConversationState>()(
       },
     }),
     {
-      name: 'digimon-rag-conversations',
+      name: 'rail-guidance-conversations',
       version: 1,
       storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({ conversations: state.conversations, activeId: state.activeId }),

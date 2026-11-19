@@ -1,6 +1,6 @@
 """RAG evaluation script using RAGAS.
 
-Evaluates the Digimon RAG pipeline across 4 standard metrics:
+Evaluates the Indian rail guidance RAG pipeline across 4 standard metrics:
   - faithfulness      : Is the answer grounded in the retrieved context?
   - answer_relevancy  : Is the answer relevant to the question?
   - context_precision : Are the retrieved chunks precise (not noisy)?
@@ -48,7 +48,7 @@ from ragas.metrics import Faithfulness, ResponseRelevancy, LLMContextPrecisionWi
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.run_config import RunConfig
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_voyageai import VoyageAIEmbeddings
 
 from app.core.config import get_settings
@@ -57,7 +57,7 @@ from app.rag.prompt_builder import PromptBuilder
 from app.rag.llm_client import LLMClient
 from scripts.eval_dataset import EVAL_DATASET
 
-_DEFAULT_CACHE = os.path.join(os.path.dirname(__file__), ".eval_cache.json")
+_DEFAULT_CACHE = os.path.join(os.path.dirname(__file__), ".rail_eval_cache.json")
 
 
 class SymmetricVoyageEmbeddings(VoyageAIEmbeddings):
@@ -150,9 +150,10 @@ def run_evaluation(samples: list) -> None:
 
     dataset = EvaluationDataset(samples=samples)
 
-    llm_judge = LangchainLLMWrapper(ChatAnthropic(
-        model="claude-haiku-4-5-20251001",
-        api_key=settings.anthropic_api_key,
+    llm_judge = LangchainLLMWrapper(ChatOpenAI(
+        model=settings.groq_model,
+        api_key=settings.groq_api_key,
+        base_url="https://api.groq.com/openai/v1",
     ))
     embeddings_judge = LangchainEmbeddingsWrapper(SymmetricVoyageEmbeddings(
         voyage_api_key=settings.voyage_api_key,
@@ -203,7 +204,7 @@ async def main(eval_only: bool, cache_path: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate the Digimon RAG pipeline with RAGAS.")
+    parser = argparse.ArgumentParser(description="Evaluate the rail guidance RAG pipeline with RAGAS.")
     parser.add_argument(
         "--eval-only",
         action="store_true",

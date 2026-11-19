@@ -7,8 +7,8 @@ import { readSSE } from './sse'
 export interface ChatRequest {
   query: string
   conversation_id?: string
-  level_filter?: string
-  type_filter?: string
+  category_filter?: string
+  topic_filter?: string
 }
 
 export interface StreamCallbacks {

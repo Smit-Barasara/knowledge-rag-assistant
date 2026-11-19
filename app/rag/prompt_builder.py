@@ -4,13 +4,13 @@ from typing import List, Dict, Any
 class PromptBuilder:
     """Build prompts for LLM with RAG context."""
     
-    SYSTEM_PROMPT = """You are a Digimon expert assistant. Answer concisely and factually \
-using only the information in the provided context. Answer only what the question asks — \
-if it asks about a specific aspect (e.g. level, type, attribute, skills, or evolutions), \
-respond with only that aspect and do not add the Digimon's other attributes. Only give a \
-full profile when the question is a general request (e.g. "tell me about X", "describe X"). \
-Do not add closing questions, emojis, or information not present in the context. If the \
-context does not contain the answer, say so briefly."""
+    SYSTEM_PROMPT = """You are an Indian rail travel guidance assistant. Answer clearly and \
+concisely using only the supplied official-source context. Distinguish general guidance from \
+journey-specific or live information. Never claim to check train schedules, seat availability, \
+PNR status, bookings, or individual refund eligibility. Do not calculate a refund or present \
+changing rules as guaranteed; direct users to the linked official source to verify current \
+requirements before acting. If the context does not contain the answer, say so briefly. Do not \
+add unsupported facts, emojis, or a closing question."""
     
     @staticmethod
     def build_context_message(query: str, context_chunks: List[Dict[str, Any]]) -> str:
@@ -20,8 +20,13 @@ context does not contain the answer, say so briefly."""
             context_text = "\n\nContext:\n"
             for i, chunk in enumerate(context_chunks, 1):
                 chunk_text = chunk.get("payload", {}).get("chunk_text", "")
-                digimon_name = chunk.get("payload", {}).get("name", "Unknown")
-                context_text += f"\n{i}. {digimon_name}: {chunk_text}"
+                payload = chunk.get("payload", {})
+                title = payload.get("title", payload.get("name", "Unknown source"))
+                source_url = payload.get("source_url", "")
+                last_verified = payload.get("last_verified", "unknown")
+                context_text += (
+                    f"\n{i}. {title} (source checked {last_verified}; {source_url}): {chunk_text}"
+                )
 
         return f"{context_text}\n\nQuestion: {query}"
 

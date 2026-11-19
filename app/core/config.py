@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     )
 
     # LLM
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-haiku-4-5"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Embeddings
     voyage_api_key: str = ""
@@ -19,14 +19,10 @@ class Settings(BaseSettings):
     voyage_embed_batch_size: int = 20
     voyage_rpm: int = 3
 
-    # Ingestion
-    ingest_limit: int = 100
-    dapi_base_url: str = "https://digi-api.com/api/v1"
-
     # Qdrant
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
-    qdrant_collection_name: str = "digimon_knowledge"
+    qdrant_collection_name: str = "rail_guidance_knowledge"
 
     # PostgreSQL
     postgres_host: str = "localhost"

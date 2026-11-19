@@ -1,75 +1,48 @@
+from typing import Any
+
 from app.mcp.tools import MCPTools
-from typing import Dict, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class MCPServer:
-    """MCP Server for Digimon tools."""
-    
+    """MCP server for source-linked Indian rail guidance tools."""
+
     def __init__(self):
         self.tools = MCPTools()
-    
-    async def call_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
-        """Call a specific MCP tool."""
-        try:
-            if tool_name == "get_digimon_by_name":
-                name = kwargs.get("name")
-                if not name:
-                    return {"error": "Missing required parameter: name"}
-                return await self.tools.get_digimon_by_name(name)
-            
-            elif tool_name == "get_digimon_by_level":
-                level = kwargs.get("level")
-                if not level:
-                    return {"error": "Missing required parameter: level"}
-                return {"results": await self.tools.get_digimon_by_level(level)}
-            
-            elif tool_name == "get_digimon_by_id":
-                digimon_id = kwargs.get("digimon_id")
-                if digimon_id is None:
-                    return {"error": "Missing required parameter: digimon_id"}
-                return await self.tools.get_digimon_by_id(digimon_id)
 
-            elif tool_name == "get_digimon_skills":
-                digimon_id = kwargs.get("digimon_id")
-                if digimon_id is None:
-                    return {"error": "Missing required parameter: digimon_id"}
-                return {"skills": await self.tools.get_digimon_skills(digimon_id)}
-            
-            else:
-                return {"error": f"Unknown tool: {tool_name}"}
-        
-        except Exception as e:
-            logger.error(f"Error calling MCP tool {tool_name}: {e}")
-            return {"error": str(e)}
-    
-    def list_tools(self) -> List[Dict[str, Any]]:
-        """List available MCP tools."""
+    async def call_tool(self, tool_name: str, **kwargs) -> dict[str, Any]:
+        try:
+            if tool_name == "search_rail_guidance":
+                query = kwargs.get("query")
+                if not query:
+                    return {"error": "Missing required parameter: query"}
+                return {"results": await self.tools.search_guidance(query)}
+            if tool_name == "get_rail_guidance_document":
+                document_id = kwargs.get("document_id")
+                if document_id is None:
+                    return {"error": "Missing required parameter: document_id"}
+                document = self.tools.get_guidance_document(document_id)
+                return document or {"error": f"Guidance document {document_id} not found"}
+            return {"error": f"Unknown tool: {tool_name}"}
+        except Exception as error:
+            logger.error("Error calling MCP tool %s: %s", tool_name, error)
+            return {"error": str(error)}
+
+    def list_tools(self) -> list[dict[str, Any]]:
         return [
             {
-                "name": "get_digimon_by_name",
-                "description": "Get Digimon information by name",
-                "parameters": {"name": "string (required)"}
+                "name": "search_rail_guidance",
+                "description": "Search the source-linked Indian rail travel guidance corpus.",
+                "parameters": {"query": "string (required)"},
             },
             {
-                "name": "get_digimon_by_level",
-                "description": "Get Digimons by level (e.g., Rookie, Champion)",
-                "parameters": {"level": "string (required)"}
+                "name": "get_rail_guidance_document",
+                "description": "Get a guidance document and official source by archive ID.",
+                "parameters": {"document_id": "integer (required)"},
             },
-            {
-                "name": "get_digimon_by_id",
-                "description": "Get Digimon by DAPI ID",
-                "parameters": {"digimon_id": "integer (required)"}
-            },
-            {
-                "name": "get_digimon_skills",
-                "description": "Get skills for a specific Digimon",
-                "parameters": {"digimon_id": "integer (required)"}
-            }
         ]
-    
+
     async def close(self):
-        """Close resources."""
         await self.tools.close()

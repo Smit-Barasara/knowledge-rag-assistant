@@ -1,18 +1,34 @@
-import anthropic
+from openai import AsyncOpenAI
 from typing import Dict, Any, List, Optional
 from app.core.config import get_settings
 import logging
 
 logger = logging.getLogger(__name__)
 
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
 
 class LLMClient:
-    """Client for Anthropic Claude API."""
+    """Client for Groq's OpenAI-compatible chat completions API."""
 
     def __init__(self):
         settings = get_settings()
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.anthropic_model
+        self.client = AsyncOpenAI(
+            api_key=settings.groq_api_key or "not-configured",
+            base_url=GROQ_BASE_URL,
+        )
+        self.model = settings.groq_model
+
+    @staticmethod
+    def _messages(
+        prompt: str,
+        history: Optional[List[Dict[str, str]]],
+        system: Optional[str],
+    ) -> List[Dict[str, str]]:
+        messages = [{"role": "system", "content": system}] if system else []
+        messages.extend(history or [])
+        messages.append({"role": "user", "content": prompt})
+        return messages
 
     async def chat(
         self,
@@ -23,22 +39,24 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """Send a message and get a completion. Pass `history` for multi-turn conversations."""
         try:
-            messages = list(history) if history else []
-            messages.append({"role": "user", "content": prompt})
-            response = await self.client.messages.create(
+            system = kwargs.pop("system", None)
+            response = await self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=max_tokens,
-                messages=messages,
+                max_completion_tokens=max_tokens,
+                messages=self._messages(prompt, history, system),
                 **kwargs
             )
 
+            usage = response.usage
+            prompt_tokens = usage.prompt_tokens if usage else 0
+            completion_tokens = usage.completion_tokens if usage else 0
             return {
-                "content": response.content[0].text,
+                "content": response.choices[0].message.content or "",
                 "model": response.model,
                 "usage": {
-                    "prompt_tokens": response.usage.input_tokens,
-                    "completion_tokens": response.usage.output_tokens,
-                    "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
                 },
             }
         except Exception as e:
@@ -57,25 +75,34 @@ class LLMClient:
         or {"type": "done", "usage": {...}}.
         """
         try:
-            messages = list(history) if history else []
-            messages.append({"role": "user", "content": prompt})
-            async with self.client.messages.stream(
+            system = kwargs.pop("system", None)
+            stream = await self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=1024,
-                messages=messages,
+                max_completion_tokens=1024,
+                messages=self._messages(prompt, history, system),
+                stream=True,
+                stream_options={"include_usage": True},
                 **kwargs,
-            ) as stream:
-                async for text in stream.text_stream:
-                    yield {"type": "token", "text": text}
-                message = await stream.get_final_message()
-                yield {
-                    "type": "done",
-                    "usage": {
-                        "prompt_tokens": message.usage.input_tokens,
-                        "completion_tokens": message.usage.output_tokens,
-                        "total_tokens": message.usage.input_tokens + message.usage.output_tokens,
-                    },
-                }
+            )
+            usage = None
+            async for chunk in stream:
+                if chunk.choices:
+                    text = chunk.choices[0].delta.content
+                    if text:
+                        yield {"type": "token", "text": text}
+                if chunk.usage:
+                    usage = chunk.usage
+
+            prompt_tokens = usage.prompt_tokens if usage else 0
+            completion_tokens = usage.completion_tokens if usage else 0
+            yield {
+                "type": "done",
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                },
+            }
         except Exception as e:
             logger.error(f"Error in LLM stream: {e}")
             raise

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { BookOpen, MessageSquare, Moon, Plus, Settings, Sun, Waypoints } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Plus, Settings, TrainFront } from 'lucide-react'
 import { StatusIndicator } from './StatusIndicator'
 import { useSettingsStore } from '../store/settings'
 import { useConversationStore } from '../store/conversations'
@@ -8,12 +8,14 @@ import { useHealth } from '../features/status/useHealth'
 
 export function Layout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const health = useHealth()
   const createConversation = useConversationStore((state) => state.createConversation)
   const theme = useSettingsStore((state) => state.theme)
   const setTheme = useSettingsStore((state) => state.setTheme)
   const reduceMotion = useSettingsStore((state) => state.reduceMotion)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const settingsMenuRef = useRef<HTMLDetailsElement>(null)
+  const isChatRoute = location.pathname === '/'
 
   useEffect(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
@@ -39,36 +41,48 @@ export function Layout() {
     }
   }, [health.isSuccess])
 
+  useEffect(() => {
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const menu = settingsMenuRef.current
+      if (menu?.open && event.target instanceof Node && !menu.contains(event.target)) {
+        menu.open = false
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && settingsMenuRef.current?.open) {
+        settingsMenuRef.current.open = false
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
   const startNewChat = () => {
     createConversation()
     navigate('/')
-    setSidebarOpen(false)
   }
 
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
-        <button
-          className="icon-button mobile-menu"
-          aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
-          aria-expanded={sidebarOpen}
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-        >
-          <Waypoints size={20} />
-        </button>
-        <Link className="brand" to="/" aria-label="Digimon Archive home">
-          <span className="brand-mark" aria-hidden="true"><Waypoints size={19} /></span>
-          <span>Digimon<span className="brand-light"> Archive</span></span>
+        <Link className="brand" to="/">
+          <span className="brand-mark" aria-hidden="true"><TrainFront size={20} /></span>
+          <span className="brand-name">Railwise</span>
+          <span className="brand-light">INDIA</span>
         </Link>
-        <nav className={`primary-nav ${sidebarOpen ? 'nav-open' : ''}`} aria-label="Main navigation">
-          <NavLink to="/" end onClick={() => setSidebarOpen(false)}><MessageSquare size={16} /> Chat</NavLink>
-          <NavLink to="/explore" onClick={() => setSidebarOpen(false)}><BookOpen size={16} /> Explorer</NavLink>
-          <NavLink to="/about" onClick={() => setSidebarOpen(false)}><Waypoints size={16} /> How it works</NavLink>
+        <nav className="primary-nav" aria-label="Main navigation">
+          <NavLink to="/" end>Chat</NavLink>
+          <NavLink to="/explore">Guidance</NavLink>
+          <NavLink to="/about">How it works</NavLink>
         </nav>
         <div className="topbar-actions">
           <StatusIndicator />
-          <details className="settings-menu">
+          <details ref={settingsMenuRef} className="settings-menu">
             <summary className="icon-button" aria-label="Open settings"><Settings size={18} /></summary>
             <div className="settings-popover" role="group" aria-label="Settings">
               <strong>Preferences</strong>
@@ -81,22 +95,21 @@ export function Layout() {
               <SettingsToggles />
             </div>
           </details>
-          <button className="button button-primary new-chat-button" onClick={startNewChat}>
+          <button className="button button-primary new-chat-button" aria-label="New chat" onClick={startNewChat}>
             <Plus size={16} /><span>New chat</span>
           </button>
         </div>
       </header>
       {health.isError && (
         <div className="offline-banner" role="alert">
-          The API is unreachable. Check that the backend is running; chat and Digimon data are unavailable until it reconnects.
+          The API is unreachable. Check that the backend is running; chat and rail guidance are unavailable until it reconnects.
         </div>
       )}
       <main id="main-content" className="route-content">
         <Outlet />
       </main>
-      <footer className="app-footer">
-        <span>Unofficial fan project · Conversations are stored in your browser</span>
-        <span><Sun size={13} aria-hidden="true" /><Moon size={13} aria-hidden="true" /></span>
+      <footer className={`app-footer ${isChatRoute ? 'footer-hidden-chat' : ''}`}>
+        General guidance only · Check IRCTC for current journey details
       </footer>
     </div>
   )

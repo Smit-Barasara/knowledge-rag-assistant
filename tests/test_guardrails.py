@@ -8,12 +8,13 @@ def _make_llm(response_text: str) -> MagicMock:
     return llm
 
 
-async def test_digimon_query_passes():
+async def test_rail_query_passes():
     from app.guardrails.input_guard import InputGuard
 
     llm = _make_llm("YES")
     guard = InputGuard(llm)
-    assert await guard.is_digimon_related("What are Agumon's skills?") is True
+    assert await guard.is_rail_related("How does IRCTC describe Tatkal booking?") is True
+    assert llm.chat.await_args.kwargs["max_tokens"] == 128
 
 
 async def test_off_topic_query_blocked():
@@ -21,7 +22,7 @@ async def test_off_topic_query_blocked():
 
     llm = _make_llm("NO")
     guard = InputGuard(llm)
-    assert await guard.is_digimon_related("What is the capital of France?") is False
+    assert await guard.is_rail_related("What is the capital of France?") is False
 
 
 async def test_fail_open_on_llm_error():
@@ -31,7 +32,7 @@ async def test_fail_open_on_llm_error():
     llm.chat = AsyncMock(side_effect=Exception("LLM unavailable"))
     guard = InputGuard(llm)
     # Must return True (allow through) to avoid cascading failure
-    assert await guard.is_digimon_related("anything") is True
+    assert await guard.is_rail_related("anything") is True
 
 
 async def test_case_insensitive_yes():
@@ -39,4 +40,4 @@ async def test_case_insensitive_yes():
 
     llm = _make_llm("  Yes  ")
     guard = InputGuard(llm)
-    assert await guard.is_digimon_related("Tell me about Gabumon") is True
+    assert await guard.is_rail_related("How can I search for trains?") is True

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getHealth } from '../../api/digimon'
+import { getHealth } from '../../api/health'
 
 export function useHealth() {
   return useQuery({
